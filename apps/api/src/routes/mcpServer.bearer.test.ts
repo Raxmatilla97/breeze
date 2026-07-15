@@ -39,15 +39,43 @@ vi.mock('../db', () => {
   // `.where(...)` needs to be both awaitable (for queries that don't call
   // .limit — e.g. resolvePartnerAccessibleOrgIds' org enumeration) AND
   // provide a `.limit(...)` continuation (for the membership lookup).
-  const rows = [{ partnerId: 'partner-1', orgAccess: 'all', orgIds: null, id: 'org-1' }];
-  const makeWhere = () => {
-    const thenable = Promise.resolve(rows) as Promise<typeof rows> & { limit: (n: number) => Promise<typeof rows> };
+  //
+  // `roleId` is REQUIRED on the membership row: getUserPermissions returns null
+  // for a row without a usable role, and buildAuthFromApiKey now fails CLOSED on
+  // null perms (SR2-15). This row models a legitimate creator who HAS a role but
+  // NO site restriction (siteIds null → allowedSiteIds undefined → all sites),
+  // which is exactly the "unrestricted creator" these tests assert.
+  const membershipRows = [{ partnerId: 'partner-1', orgAccess: 'all', orgIds: null, id: 'org-1', roleId: 'role-1', siteIds: null }];
+  // SR2-15 (Task 3, scope re-clamp): buildAuthFromApiKey's org branch now
+  // re-validates the API key's stored scopes (always ['ai:read'] in this
+  // file) against the creator's live permissions via
+  // authorizeHumanApiKeyCreator -> validateApiKeyScopeDelegation. That reads
+  // permission rows shaped `{resource, action}` from the rolePermissions/
+  // permissions innerJoin — distinct from the plain membership select above —
+  // so buildPerms() sees a creator who actually holds the grants ai:read
+  // requires (devices/alerts/scripts/automations read), matching this file's
+  // "unrestricted creator" fixture instead of failing the NEW re-clamp guard.
+  const permissionRows = [
+    { resource: 'devices', action: 'read' },
+    { resource: 'alerts', action: 'read' },
+    { resource: 'scripts', action: 'read' },
+    { resource: 'automations', action: 'read' },
+  ];
+  const makeWhere = (rows: unknown[]) => {
+    const thenable = Promise.resolve(rows) as Promise<unknown[]> & { limit: (n: number) => Promise<unknown[]> };
     thenable.limit = async () => rows;
     return thenable;
   };
+  // buildPerms resolves role→permissions via `.innerJoin(...).where(...)`, so the
+  // chain must offer innerJoin (returning a `.where` continuation) alongside the
+  // direct `.where` used by the membership/org-enumeration selects.
+  const makeFrom = () => ({
+    where: () => makeWhere(membershipRows),
+    innerJoin: () => ({ where: () => makeWhere(permissionRows) }),
+  });
   return {
     db: {
-      select: () => ({ from: () => ({ where: makeWhere }) }),
+      select: () => ({ from: makeFrom }),
     },
     hasDbAccessContext: vi.fn(() => true),
     getCurrentDbAccessContext: vi.fn(() => undefined),

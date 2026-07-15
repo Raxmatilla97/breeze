@@ -62,6 +62,7 @@ import { searchRoutes } from './routes/search';
 import { logsRoutes } from './routes/logs';
 import { remoteRoutes } from './routes/remote';
 import { apiKeyRoutes } from './routes/apiKeys';
+import { servicePrincipalRoutes } from './routes/servicePrincipals';
 import { enrollmentKeyRoutes, publicEnrollmentRoutes, publicShortLinkRoutes } from './routes/enrollmentKeys';
 import { installerRoutes } from './routes/installer';
 import { ssoRoutes } from './routes/sso';
@@ -175,6 +176,7 @@ import { initializeMlOutputRetention, shutdownMlOutputRetention } from './jobs/m
 import { initializeIPHistoryRetention, shutdownIPHistoryRetention } from './jobs/ipHistoryRetention';
 import { initializeChangeLogRetention, shutdownChangeLogRetention } from './jobs/changeLogRetention';
 import { initializeOauthCleanupWorker, shutdownOauthCleanupWorker } from './jobs/oauthCleanup';
+import { initializeAuthEmailWorker, shutdownAuthEmailWorker } from './jobs/authEmailWorker';
 import {
   initializeEnrollmentKeyCleanupWorker,
   shutdownEnrollmentKeyCleanupWorker,
@@ -829,6 +831,7 @@ api.route('/vnc-exchange', vncExchangeRoutes); // No auth — one-time code is t
 api.route('/vnc-viewer', vncViewerRoutes); // Viewer-token auth (purpose='viewer', scoped to a tunnel sessionId)
 api.route('/remote', remoteRoutes);
 api.route('/api-keys', apiKeyRoutes);
+api.route('/service-principals', servicePrincipalRoutes);
 api.route('/enrollment-keys', publicEnrollmentRoutes); // Public download (no auth) — must precede auth-protected routes
 api.route('/enrollment-keys', enrollmentKeyRoutes);
 api.route('/installer', installerRoutes);
@@ -1166,6 +1169,9 @@ async function initializeWorkers(): Promise<void> {
     ['processSampleRetention', initializeProcessSampleRetention],
     ['changeLogRetention', initializeChangeLogRetention],
     ['oauthCleanup', initializeOauthCleanupWorker],
+    // SR2-22: out-of-band auth-email worker (forgot-password issuance/send).
+    // initializeAuthEmailWorker is synchronous (returns void), so wrap it.
+    ['authEmailWorker', async () => { initializeAuthEmailWorker(); }],
     ['enrollmentKeyCleanup', initializeEnrollmentKeyCleanupWorker],
     ['auditRetention', initializeAuditRetentionWorker],
     ['auditChainVerify', initializeAuditChainVerifyWorker],
@@ -1359,6 +1365,7 @@ async function shutdownRuntime(signal: NodeJS.Signals): Promise<void> {
     shutdownProcessSampleRetention,
     shutdownChangeLogRetention,
     shutdownOauthCleanupWorker,
+    shutdownAuthEmailWorker,
     shutdownEnrollmentKeyCleanupWorker,
     shutdownAuditRetentionWorker,
     shutdownAuditChainVerifyWorker,
