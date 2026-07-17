@@ -48,6 +48,9 @@ type Session struct {
 	// from the helper in response to a broker-initiated keepalive ping.
 	// Read/written atomically so the keepalive goroutine doesn't need s.mu.
 	lastPongAt atomic.Int64
+
+	broker      *Broker
+	peerProcess *ownedPeerProcessRef
 }
 
 // NewSession creates a new session for a verified user helper connection.
@@ -146,6 +149,86 @@ func (s *Session) SendCommand(id, cmdType string, payload any, timeout time.Dura
 		return nil, fmt.Errorf("session closed while waiting for response")
 	case <-time.After(timeout):
 		return nil, ErrCommandTimeout
+	}
+}
+
+// sendCommandWithQuiescence sends a command while retaining its response
+// registration after a timeout or transport error. The returned channel is
+// non-nil only when execution is uncertain and closes only after a valid,
+// correlated helper response proves the command has finished. A session close
+// does not prove a helper goroutine has stopped, so it deliberately leaves the
+// channel open.
+func (s *Session) sendCommandWithQuiescence(id, cmdType string, payload any, timeout time.Duration) (*ipc.Envelope, <-chan struct{}, error) {
+	ch := make(chan *ipc.Envelope, 1)
+	quiesced := make(chan struct{})
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil, nil, fmt.Errorf("session closed")
+	}
+	if _, exists := s.pending[id]; exists {
+		s.mu.Unlock()
+		return nil, nil, fmt.Errorf("%w: %q (session %q)", ErrDuplicateCommand, id, s.SessionID)
+	}
+	s.pending[id] = pendingResponse{
+		ch:           ch,
+		expectedType: expectedResponseType(cmdType),
+		validate:     responseValidator(cmdType, payload),
+	}
+	done := s.done
+	s.mu.Unlock()
+
+	var finishOnce sync.Once
+	finish := func(proven bool) {
+		finishOnce.Do(func() {
+			s.mu.Lock()
+			if current, ok := s.pending[id]; ok && current.ch == ch {
+				delete(s.pending, id)
+			}
+			s.mu.Unlock()
+			if proven {
+				close(quiesced)
+			}
+		})
+	}
+	waitForLateResponse := func() {
+		go func() {
+			select {
+			case resp := <-ch:
+				finish(resp != nil)
+			case <-done:
+				// Prefer a response already delivered concurrently with teardown.
+				select {
+				case resp := <-ch:
+					finish(resp != nil)
+				default:
+					finish(false)
+				}
+			}
+		}()
+	}
+
+	if err := s.conn.SendTyped(id, cmdType, payload); err != nil {
+		waitForLateResponse()
+		return nil, quiesced, err
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case resp, ok := <-ch:
+		if !ok || resp == nil {
+			finish(false)
+			return nil, quiesced, fmt.Errorf("session closed while waiting for response")
+		}
+		finish(true)
+		return resp, nil, nil
+	case <-done:
+		finish(false)
+		return nil, quiesced, fmt.Errorf("session closed while waiting for response")
+	case <-timer.C:
+		waitForLateResponse()
+		return nil, quiesced, ErrCommandTimeout
 	}
 }
 
@@ -261,6 +344,22 @@ func (s *Session) HasScope(scope string) bool {
 
 // Close closes the underlying connection and cancels all pending commands.
 func (s *Session) Close() error {
+	if s.broker != nil {
+		return s.broker.closeSession(s)
+	}
+	return s.closeTransportAndPeer()
+}
+
+func (s *Session) closeTransportAndPeer() error {
+	transportErr := s.closeTransport()
+	peerErr := s.peerProcess.close()
+	if transportErr != nil {
+		return transportErr
+	}
+	return peerErr
+}
+
+func (s *Session) closeTransport() error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -277,6 +376,9 @@ func (s *Session) Close() error {
 		close(done)
 	}
 
+	if s.conn == nil {
+		return nil
+	}
 	return s.conn.Close()
 }
 
@@ -355,6 +457,8 @@ func expectedResponseType(cmdType string) string {
 		return ipc.TypeNotifyResult
 	case ipc.TypePamRequestDialog:
 		return ipc.TypePamDialogResult
+	case ipc.TypePamDismissConsent:
+		return ipc.TypePamDismissConsentResult
 	case ipc.TypeClipboardGet:
 		return ipc.TypeClipboardData
 	case ipc.TypeClipboardSet:

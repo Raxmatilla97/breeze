@@ -386,6 +386,11 @@
         "thisLine": "diese Position",
         "removeSectionWithLines": "Dadurch werden die Preistabelle und ihre Positionen entfernt. Dies kann nicht rückgängig gemacht werden."
       },
+      "customer": {
+        "help": "Wird ein Entwurf einem anderen Unternehmen zugewiesen, wird die Standort-Zuordnung entfernt und der Steuersatz dieses Unternehmens angewendet.",
+        "label": "Kunde",
+        "success": "Angebot zu {{name}} verschoben."
+      },
       "deposit": {
         "due": "Anzahlung fällig",
         "eligibleAria": "Anzahlung möglich",
@@ -420,6 +425,7 @@
         "reorderBlocks": "Blöcke konnten nicht neu angeordnet werden.",
         "reorderLines": "Positionen konnten nicht neu angeordnet werden.",
         "reorderSections": "Abschnitte konnten nicht neu angeordnet werden.",
+        "saveCustomer": "Kunde konnte nicht geändert werden.",
         "saveTerms": "Die Bedingungen konnten nicht gespeichert werden.",
         "saveTitle": "Der Titel konnte nicht gespeichert werden.",
         "unitPriceZeroOrMore": "Geben Sie einen Stückpreis von 0 oder mehr ein.",
@@ -506,6 +512,7 @@
         "qty": "Menge",
         "recurrence": "Wiederholung",
         "scrollAria": "Preistabelle – scrollen Sie seitwärts für Steuer-, Gesamt- und Zeilenaktionen",
+        "showSubtotal": "Zwischensummenzeile anzeigen",
         "tax": "Steuer",
         "taxTitle": "Steuer pro Position. Maßgeblich ist die Überschrift „Steuersumme“, die um einen Rundungscent abweichen kann.",
         "taxable": "Steuerpflichtig",
@@ -526,6 +533,20 @@
       }
     },
     "actions": {
+      "cloneDialog": {
+        "companyLabel": "Unternehmen",
+        "confirm": "Kopie erstellen",
+        "defaultTitle": "Kopie von {{name}}",
+        "message": "Erstellt einen neuen Entwurf mit demselben Inhalt. Wählen Sie das Unternehmen aus und vergeben Sie einen Titel.",
+        "retargetHint": "Der neue Entwurf verwendet die Rechnungsdaten und den Steuersatz dieses Unternehmens; die Standort-Zuordnung wird entfernt.",
+        "title": "Angebot duplizieren",
+        "titleLabel": "Titel"
+      },
+      "cloneError": "Das Angebot konnte nicht dupliziert werden.",
+      "cloneQuote": "Angebot duplizieren",
+      "cloneSavingTitle": "Warten Sie vor dem Duplizieren, bis die Änderungen gespeichert sind.",
+      "cloneSuccess": "Angebot dupliziert.",
+      "cloning": "Wird dupliziert…",
       "deleteConfirm": {
         "message": "Dadurch wird der Angebotsentwurf dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
         "title": "Angebotsentwurf löschen"
@@ -535,10 +556,13 @@
       "deleteSuccess": "Entwurf gelöscht",
       "downloadPdf": "Laden Sie PDF herunter",
       "emptyHint": "Fügen Sie vor dem Senden mindestens einen Artikel hinzu.",
+      "moreActions": "Weitere Aktionen",
       "savingHint": "Änderungen speichern… Entsperrungen senden, wenn alles gespeichert ist.",
       "savingTitle": "Speichern Ihrer Änderungen – Entsperrungen senden, wenn alles gespeichert ist.",
       "sendConfirm": {
         "message": "Wir senden dieses Angebot per E-Mail an {{orgName}} und markieren es als „Gesendet“ – {{amount}} fällig bei Annahme. Dies kann nicht rückgängig gemacht werden.",
+        "messageLabel": "Persönliche Nachricht hinzufügen (optional)",
+        "messagePlaceholder": "Fügen Sie eine kurze Notiz hinzu – sie erscheint in der E-Mail über dem Zusage-Link.",
         "title": "Dieses Angebot senden?"
       },
       "sendError": "Der Vorschlag konnte nicht gesendet werden.",
@@ -560,6 +584,11 @@
         "declined": "Abgelehnt",
         "sent": "Gesendet",
         "viewed": "Gesehen"
+      },
+      "pax8Order": {
+        "message_one": "Dieses Angebot hat einen Pax8-Auftrag ({{count}} Position) bereitgestellt, für den noch Bereitstellungsdetails fehlen",
+        "message_other": "Dieses Angebot hat einen Pax8-Auftrag ({{count}} Positionen) bereitgestellt, für den noch Bereitstellungsdetails fehlen",
+        "open": "Pax8-Auftrag öffnen"
       },
       "pricing": "Preise",
       "proposalImageAlt": "Angebotsbild",
@@ -620,6 +649,8 @@
       "imageUnavailable": "Bild nicht verfügbar",
       "issued": "Ausgestellt",
       "preparedFor": "Vorbereitet für",
+      "taxId": "Steuernummer: {{id}}",
+      "imageZoomAria": "Größeres Bild anzeigen",
       "preview": {
         "description": "Das sieht Ihr Kunde auf seinem Angebotslink.",
         "downloadPdf": "Laden Sie PDF herunter",

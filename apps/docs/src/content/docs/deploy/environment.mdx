@@ -19,10 +19,14 @@ All configuration is done through environment variables, defined in your `.env.p
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `POSTGRES_USER` | `breeze` | | PostgreSQL username |
-| `POSTGRES_PASSWORD` | — | Yes | PostgreSQL password |
+| `POSTGRES_PASSWORD` | — | Yes | PostgreSQL password. Also used to derive the unprivileged request-pool credential (see below) unless `DATABASE_URL_APP` or `BREEZE_APP_DB_PASSWORD` is set. |
 | `POSTGRES_DB` | `breeze` | | Database name |
 | `POSTGRES_PORT` | `5432` | | PostgreSQL port |
 | `DATABASE_URL` | — | Auto | Full connection string (constructed from above in Docker) |
+| `DATABASE_URL_APP` | — | One of these three (prod) | Explicit connection string for the **unprivileged request role** (`breeze_app`). Preferred, and **required** for multi-host / high-availability `DATABASE_URL` values, which cannot be derived automatically. |
+| `BREEZE_APP_DB_PASSWORD` | — | One of these three (prod) | Password for the `breeze_app` role, used to derive its connection string from `DATABASE_URL`. |
+
+In production, Breeze runs request handlers as an unprivileged, row-level-security-enforced database role (`breeze_app`) rather than as the database owner. **The API refuses to start** unless it can configure that role — set one of `DATABASE_URL_APP`, `BREEZE_APP_DB_PASSWORD`, or `POSTGRES_PASSWORD`. This check runs whenever `NODE_ENV=production`, **including when `AUTO_MIGRATE=false`**. The API also **refuses to start if it detects it is running as a `SUPERUSER` or `BYPASSRLS` role** — if you were previously running as the `postgres` superuser, switch to a `NOSUPERUSER`/`NOBYPASSRLS` role. After doing so you may notice rows that were previously visible to a tenant "disappear"; that is row-level security working correctly, not data loss. See the [request-database-role runbook](https://github.com/LanternOps/breeze/blob/main/docs/runbooks/request-database-role.md).
 
 ## Redis
 
@@ -69,6 +73,7 @@ deployment env vars.
 | `IS_HOSTED` | — | Yes (prod) | `true` for hosted SaaS edition, `false` for self-hosted. Must be set explicitly — the API refuses to boot otherwise. Controls signup gating, billing, and email-verification policy. |
 | `TRUST_PROXY_HEADERS` | — | Yes (prod) | `true` when behind a reverse proxy (Caddy, Cloudflare). Must be set explicitly in production. |
 | `TRUSTED_PROXY_CIDRS` | — | When `TRUST_PROXY_HEADERS=true` | Comma-separated CIDRs of trusted reverse proxies (e.g., `10.0.0.0/8,172.16.0.0/12`). Required when proxy headers are trusted. |
+| `TRUST_CF_CONNECTING_IP` | `false` | | Set to `true` **only** when Breeze is fronted by Cloudflare. Cloudflare overwrites the `CF-Connecting-IP` header at its edge, but a non-Cloudflare reverse proxy (including the bundled Caddy) does not strip it — so trusting it without a Cloudflare front would let a client spoof the header to defeat IP allowlists and per-IP rate limits. When off, client IPs are resolved from `X-Forwarded-For` instead. If you are behind Cloudflare and leave this unset, client-IP attribution (rate limits, audit logs, IP allowlists) falls back to `X-Forwarded-For`; the API logs a startup warning in that case. |
 | `IP_ALLOWLIST_ENFORCEMENT_MODE` | `enforce` | | Partner dashboard IP allowlist mode. Use `off` only as a break-glass switch if an allowlist locks everyone out. The allowlist only enforces when a partner has entries configured and proxy trust is working through `TRUST_PROXY_HEADERS` plus `TRUSTED_PROXY_CIDRS`. |
 | `DASHBOARD_URL` | — | | URL for links in emails |
 | `PUBLIC_APP_URL` | — | | Public-facing app URL |
@@ -102,6 +107,18 @@ deployment env vars.
 | `TWILIO_VERIFY_SERVICE_SID` | — | Twilio Verify service SID (for SMS MFA) |
 | `TWILIO_MESSAGING_SERVICE_SID` | — | Twilio Messaging Service SID (for alert SMS) |
 | `TWILIO_PHONE_NUMBER` | — | Twilio phone number for outbound SMS |
+
+## Mobile Push Notifications (iOS)
+
+Push notifications to the iOS app go directly through Apple's push service (APNs). All four values are optional but **all-or-none** — setting any one makes the other three required, so a half-configured setup fails at startup rather than silently at first send. Leave them all unset to disable push.
+
+| Variable | Default | Description |
+|---|---|---|
+| `APNS_AUTH_KEY` | — | Contents of the Apple `.p8` push auth key |
+| `APNS_KEY_ID` | — | Apple push key ID |
+| `APNS_TEAM_ID` | — | Apple developer team ID |
+| `APNS_BUNDLE_ID` | — | iOS app bundle identifier |
+| `APNS_ENVIRONMENT` | `production` | `production` or `sandbox`. An empty value is treated as unset. |
 
 ## Binary Distribution
 
@@ -275,6 +292,36 @@ These enable partners to connect a Microsoft 365 shared support mailbox so custo
 
 <Aside>
   Optional and independent of C2C backup. Register a **multi-tenant** app with Microsoft Graph **application** permissions `Mail.ReadWrite` and `Mail.Send`, and add the redirect URI `<PUBLIC_URL>/api/v1/tickets/mailbox/callback`. When unset, the Microsoft 365 mailbox card is hidden and the connect routes return `400` -- nothing else is affected. See [Email-to-Ticket → Microsoft 365 support mailbox](/features/ticketing/#connecting-a-microsoft-365-support-mailbox).
+</Aside>
+
+## Customer Microsoft 365 Graph-read consent (optional)
+
+This feature is **off by default and safe to leave unset** — every variable below stays empty in a normal deployment. The API only reads and validates them when you turn the feature on. Concretely, the API **refuses to boot only when `M365_CUSTOMER_GRAPH_READ_ONBOARDING_ENABLED=true` *and* one of the required variables is missing or malformed**; while the flag is off (or absent) these variables are never parsed and any values you set are ignored.
+
+Customer Graph-read lets a customer administrator grant read-only Microsoft Graph consent to Breeze's dedicated multi-tenant application without handing you a reusable secret. The Entra certificate and Key Vault access live entirely inside an isolated [executor sidecar](/deploy/production/) — the API holds only an opaque, version-pinned reference and a private key it uses to sign short-lived internal requests to that sidecar. See [Customer Graph Read](/features/identity-integrations/#customer-graph-read-recommended-for-read-only-inventory) for the admin-facing side.
+
+| Variable | Required when enabled | Format / example | Meaning |
+|---|---|---|---|
+| `M365_CUSTOMER_GRAPH_READ_ONBOARDING_ENABLED` | — (the switch) | `true` / `false` (default `false`) | Master switch for **new** consent initiation only. Existing connection status, retest, and disconnect flows are independent of it. When `false`, none of the variables below are validated. |
+| `M365_CUSTOMER_GRAPH_READ_ONBOARDING_ORG_IDS` | Yes | Literal `*` or comma-separated canonical org UUIDs (e.g. `*` or `1111...,2222...`) | Which Breeze organizations may start consent. `*` = all organizations; otherwise an allowlist of canonical UUIDs. Boot fails if enabled and this is empty. |
+| `M365_CUSTOMER_GRAPH_READ_CLIENT_ID` | Yes | Canonical UUID | Entra application (client) ID of the shared multi-tenant Graph-read app. |
+| `M365_CUSTOMER_GRAPH_READ_CREDENTIAL_VERSION` | Yes | Exactly 32 lowercase hex characters | Pins which stored credential version the executor must use. Must equal the version segment of `M365_CUSTOMER_GRAPH_READ_VAULT_REF`. |
+| `M365_CUSTOMER_GRAPH_READ_VAULT_REF` | Yes | `akv://<vault-host>/m365-customer-graph-read/<32-lowercase-hex-version>` | Opaque Key Vault reference to the app's certificate material. The trailing version segment **must match** `M365_CUSTOMER_GRAPH_READ_CREDENTIAL_VERSION`, or boot fails. |
+| `M365_GRAPH_READ_EXECUTOR_URL` | Yes | Origin-only HTTPS, e.g. `https://m365-executor.internal` (no path, query, fragment, or userinfo) | Private base URL of the executor sidecar. Anything other than a bare `https://host[:port]` origin is rejected at boot. |
+| `M365_GRAPH_READ_EXECUTOR_AUDIENCE` | Yes | Literal `m365-graph-read-executor` | JWT audience for the API→executor internal auth token. Must equal that exact string. |
+| `M365_GRAPH_READ_EXECUTOR_SIGNING_KID` | Yes | Non-empty string | Key ID of the API's signing JWK. If the JWK file carries a `kid`, it must match this value. |
+| `M365_GRAPH_READ_EXECUTOR_SIGNING_PRIVATE_JWK_FILE` | Yes | Absolute path to a file, e.g. `/run/secrets/m365_graph_read_executor_signing_private_jwk` | The API's Ed25519 (`kty: OKP`, `crv: Ed25519`) **private** signing JWK. The file must be a regular file whose mode denies all group/other access (**`0600` or stricter**) and should be mounted **read-only**. Boot fails on a symlink, a relative path, over-broad permissions, or a JWK that isn't a valid 32-byte Ed25519 key. Do **not** put the private JWK inline in an env var. |
+
+<Aside type="note" title="How the consent callback URL is derived">
+  The API does **not** read a `..._CALLBACK_URL` variable. It builds the OAuth consent callback from `PUBLIC_URL` (falling back to `PUBLIC_APP_URL`, then `PUBLIC_API_URL`) and appends `/api/v1/m365/consent/callback`. In production at least one of those origin variables must be set. The `M365_CUSTOMER_GRAPH_READ_CALLBACK_URL` line in `.env.example` is **not consumed by the API** — it is read only by the separate executor sidecar (where it must equal that exact `https://<origin>/api/v1/m365/consent/callback` URL). On an API-only host you can ignore it.
+</Aside>
+
+<Aside type="tip">
+  With Docker secrets, `M365_GRAPH_READ_EXECUTOR_SIGNING_PRIVATE_JWK_FILE` points at the in-container mount path (e.g. `/run/secrets/...`), while `M365_GRAPH_READ_EXECUTOR_SIGNING_PRIVATE_JWK_SOURCE_FILE` in `.env` is the **host path** of the source JWK that feeds that secret. Provision the source file with a numeric owner and mode `0400`; only the mounted `..._FILE` path is validated at boot.
+</Aside>
+
+<Aside type="caution" title="Map new variables into the api service">
+  Setting a value in `.env` is necessary but **not sufficient** on a custom Compose file. Every variable above must also be listed in the `api` service's `environment:` block — Compose only interpolates variables it maps explicitly. A value present in `.env` but not mapped through Compose reaches the container as empty, so an "enabled" deploy would fail to boot as if the variable were unset.
 </Aside>
 
 ## Docker Deployment

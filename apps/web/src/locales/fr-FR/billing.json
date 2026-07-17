@@ -386,6 +386,11 @@
         "thisLine": "cette ligne",
         "removeSectionWithLines": "Cette action supprime le tableau de prix et ses lignes. Elle est irréversible."
       },
+      "customer": {
+        "help": "Déplacer un brouillon vers une autre entreprise retire l’affectation de site et applique le taux de taxe de cette entreprise.",
+        "label": "Client",
+        "success": "Devis déplacé vers {{name}}."
+      },
       "deposit": {
         "due": "Acompte dû",
         "eligibleAria": "Éligible à l'acompte",
@@ -420,6 +425,7 @@
         "reorderBlocks": "Impossible de réordonner les blocs.",
         "reorderLines": "Impossible de réordonner les lignes.",
         "reorderSections": "Impossible de réordonner les sections.",
+        "saveCustomer": "Impossible de changer le client.",
         "saveTerms": "Impossible d'enregistrer les conditions.",
         "saveTitle": "Impossible d'enregistrer le titre.",
         "unitPriceZeroOrMore": "Saisissez un prix unitaire supérieur ou égal à 0.",
@@ -506,6 +512,7 @@
         "qty": "Qté",
         "recurrence": "Récurrence",
         "scrollAria": "Tableau de prix — faites défiler horizontalement pour la taxe, le total et les actions de ligne",
+        "showSubtotal": "Afficher la ligne de sous-total",
         "tax": "Taxe",
         "taxTitle": "Taxe par ligne. L'en-tête Total taxe fait foi et peut différer d'un centime par arrondi.",
         "taxable": "Taxable",
@@ -526,6 +533,20 @@
       }
     },
     "actions": {
+      "cloneDialog": {
+        "companyLabel": "Entreprise",
+        "confirm": "Créer la copie",
+        "defaultTitle": "Copie de {{name}}",
+        "message": "Crée un nouveau brouillon avec le même contenu. Choisissez l’entreprise concernée et donnez-lui un titre.",
+        "retargetHint": "Le nouveau brouillon utilisera les informations de facturation et le taux de taxe de cette entreprise ; l’affectation de site sera retirée.",
+        "title": "Dupliquer le devis",
+        "titleLabel": "Titre"
+      },
+      "cloneError": "Impossible de dupliquer le devis.",
+      "cloneQuote": "Dupliquer le devis",
+      "cloneSavingTitle": "Attendez la fin de l'enregistrement avant de dupliquer.",
+      "cloneSuccess": "Devis dupliqué.",
+      "cloning": "Duplication…",
       "deleteConfirm": {
         "message": "Cette action supprime définitivement le devis brouillon. Elle est irréversible.",
         "title": "Supprimer le devis brouillon"
@@ -535,10 +556,13 @@
       "deleteSuccess": "Brouillon supprimé",
       "downloadPdf": "Télécharger le PDF",
       "emptyHint": "Ajoutez au moins un article avant l'envoi.",
+      "moreActions": "Plus d’actions",
       "savingHint": "Enregistrement des modifications… L'envoi sera disponible une fois tout enregistré.",
       "savingTitle": "Enregistrement de vos modifications — l'envoi sera disponible une fois tout enregistré.",
       "sendConfirm": {
         "message": "Nous enverrons cette proposition par e-mail à {{orgName}} et la marquerons Envoyée — {{amount}} dû à l'acceptation. Cette action est irréversible.",
+        "messageLabel": "Ajouter un message personnel (facultatif)",
+        "messagePlaceholder": "Ajoutez une courte note : elle apparaît dans l'e-mail, au-dessus du lien d'acceptation.",
         "title": "Envoyer cette proposition ?"
       },
       "sendError": "Impossible d'envoyer la proposition.",
@@ -560,6 +584,11 @@
         "declined": "Refusé",
         "sent": "Envoyé",
         "viewed": "Vu"
+      },
+      "pax8Order": {
+        "message_one": "Ce devis a préparé une commande Pax8 ({{count}} article) en attente des détails de provisionnement",
+        "message_other": "Ce devis a préparé une commande Pax8 ({{count}} articles) en attente des détails de provisionnement",
+        "open": "Ouvrir la commande Pax8"
       },
       "pricing": "Tarification",
       "proposalImageAlt": "Image de la proposition",
@@ -620,6 +649,8 @@
       "imageUnavailable": "Image indisponible",
       "issued": "Émis",
       "preparedFor": "Préparé pour",
+      "taxId": "Identifiant fiscal : {{id}}",
+      "imageZoomAria": "Voir l'image en grand",
       "preview": {
         "description": "Voici ce que votre client voit sur son lien de proposition.",
         "downloadPdf": "Télécharger le PDF",

@@ -48,6 +48,7 @@ const EXEMPT_TABLES: ReadonlySet<string> = new Set<string>([
   // like partner_abuse_signals, DO have a tenant column but are
   // operator-only by design, not tenant-column-less).
   'manifest_signing_keys',
+  'm365_consent_sessions',
   'partner_abuse_signals',
 ]);
 
@@ -68,6 +69,7 @@ const EXEMPT_TABLES: ReadonlySet<string> = new Set<string>([
 const INTENTIONAL_UNSCOPED: ReadonlySet<string> = new Set<string>([
   'device_commands', // Agent WS path: system-scoped command queue, no tenant isolation needed.
   'manifest_signing_keys', // System-scoped: per-deployment agent-update signing key. Forced RLS, no policies → only system context.
+  'm365_consent_sessions', // OAuth consent state: forced RLS, system-only policies; tenant scopes must never read verifier/nonce material.
   'vulnerability_sources', // Global vulnerability-source sync metadata. Forced RLS, no tenant policies → only system context.
   'vulnerabilities', // Global vulnerability catalog. Forced RLS, no tenant policies → only system context.
   'software_products', // Global normalized software dimension. Forced RLS, no tenant policies → only system context.
@@ -116,6 +118,11 @@ const ORG_AXIS_POLICY_EXCLUDED_TABLES: ReadonlySet<string> = new Set<string>([
   'pax8_company_mappings',
   'pax8_subscription_snapshots',
   'pax8_contract_line_links',
+  // pax8_orders / pax8_order_lines (2026-07-13, ordering): same shape — org_id
+  // is the customer the order is FOR, not the tenancy axis. Ordering is an
+  // MSP-side act; an org-scoped token must never see one.
+  'pax8_orders',
+  'pax8_order_lines',
   // customer_email_domains (Phase 5): partner-axis (Shape 3) carrying a
   // denormalized org_id (the routing target). RLS axis is partner_id; the
   // org_id is for routing + cascade only. Functional cross-partner/cross-org
@@ -165,6 +172,8 @@ const PARTNER_TENANT_TABLES: ReadonlyMap<string, string> = new Map<string, strin
   ['pax8_subscription_snapshots', 'partner_id'],
   ['pax8_product_mappings', 'partner_id'],
   ['pax8_contract_line_links', 'partner_id'],
+  ['pax8_orders', 'partner_id'],
+  ['pax8_order_lines', 'partner_id'],
   ['accounting_connections', 'partner_id'],
   ['scripts', 'partner_id'],
   ['script_categories', 'partner_id'],
@@ -230,6 +239,12 @@ const PARTNER_TENANT_TABLES: ReadonlyMap<string, string> = new Map<string, strin
   // technician login. Deliberately partner-ONLY (no org axis) — see
   // 2026-07-03-sso-partner-axis-login-branding.sql. partner_id is the PK.
   ['partner_login_branding', 'partner_id'],
+  // Partner service principals and independently rotatable keys are both
+  // partner-axis (Shape 3). The key table denormalizes partner_id and also
+  // enforces composite ownership against its principal and rotation lineage.
+  // Functional forge proof: partnerServicePrincipalRls.integration.test.ts.
+  ['partner_service_principals', 'partner_id'],
+  ['partner_service_principal_keys', 'partner_id'],
 ]);
 
 // Tables whose policies reference both helpers (org OR partner). `users`
@@ -438,6 +453,14 @@ const PARENT_FK_JOIN_POLICY_TABLES: ReadonlyMap<string, readonly string[]> = new
   ['config_policy_monitoring_settings', ['configuration_policies']],
   ['config_policy_monitoring_watches', ['configuration_policies']],
   ['config_policy_remote_access_settings', ['configuration_policies']],
+  ['config_policy_feature_links', ['configuration_policies']],
+  ['config_policy_assignments', ['configuration_policies']],
+  ['config_policy_alert_rules', ['configuration_policies']],
+  ['config_policy_automations', ['configuration_policies']],
+  ['config_policy_compliance_rules', ['configuration_policies']],
+  ['config_policy_patch_settings', ['configuration_policies']],
+  ['config_policy_maintenance_settings', ['configuration_policies']],
+  ['config_policy_event_log_settings', ['configuration_policies']],
   ['dashboard_widgets', ['analytics_dashboards']],
   ['backup_snapshot_files', ['backup_snapshots']],
   // psa_ticket_mappings already shipped a correct single-table-join policy
@@ -716,10 +739,14 @@ describe('RLS coverage contract', () => {
       .filter((row) => !EXEMPT_TABLES.has(row.table_name))
       .filter((row) => !row.force_rls_on)
       .map((row) => row.table_name);
+    const returnedTables = new Set(rows.map((row) => row.table_name));
+    const missingExplicitTables = explicitTables.filter(
+      (table) => !EXEMPT_TABLES.has(table) && !returnedTables.has(table),
+    );
 
     expect(
-      offenders,
-      `Tenant-scoped tables missing FORCE ROW LEVEL SECURITY:\n${JSON.stringify(offenders, null, 2)}\n\n` +
+      [...offenders, ...missingExplicitTables],
+      `Tenant-scoped tables missing from the database or missing FORCE ROW LEVEL SECURITY:\n${JSON.stringify([...offenders, ...missingExplicitTables], null, 2)}\n\n` +
         `Fix: add an idempotent migration that runs ALTER TABLE ... FORCE ROW LEVEL SECURITY for each offender.`
     ).toEqual([]);
   });
@@ -943,7 +970,11 @@ describe('RLS coverage contract', () => {
       ORDER BY t.relname;
     `)) as unknown as TableRow[];
 
-    const offenders = offendersFrom(rows);
+    const returnedTables = new Set(rows.map((row) => row.table_name));
+    const missingTables = partnerTables
+      .filter((table) => !returnedTables.has(table))
+      .map((table) => ({ table, rls_on: false, missing_cmds: [...REQUIRED_CMDS] }));
+    const offenders = [...offendersFrom(rows), ...missingTables];
 
     expect(
       offenders,
